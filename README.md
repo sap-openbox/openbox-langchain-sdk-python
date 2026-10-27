@@ -56,6 +56,7 @@ middleware = create_openbox_langchain_middleware(
     api_key="obx_live_...",              # API key (obx_live_* or obx_test_*)
     agent_did="did:aip:...",             # Required by default; can use OPENBOX_AGENT_DID
     agent_private_key="...",             # Required by default; can use OPENBOX_AGENT_PRIVATE_KEY
+    workload_private_key="...",          # IAM v3 agents instead of the DID pair
     agent_name="MyAgent",                # Agent name (from dashboard)
     governance_timeout=30.0,             # HTTP timeout in seconds
     validate=True,                       # Validate API key on startup
@@ -95,6 +96,33 @@ export OPENBOX_AGENT_PRIVATE_KEY="..."
 If DID signing is explicitly disabled for the agent in OpenBox, these values can
 be omitted. Otherwise, provide both values together.
 
+### IAM v3 workload identity
+
+An agent registered with a Keycloak workload identity authenticates with its
+PKCS8 PEM private key (the key contents, not a path). The base SDK handles the
+bootstrap, token exchange and refresh against Core's `/api/v3/*` endpoints:
+
+```python
+middleware = create_openbox_langchain_middleware(
+    api_url="https://core.openbox.ai",
+    api_key="obx_live_...",
+    workload_private_key=os.environ["OPENBOX_WORKLOAD_PRIVATE_KEY"],
+)
+```
+
+When the argument is omitted, `OPENBOX_LANGCHAIN_WORKLOAD_PRIVATE_KEY` and then
+`OPENBOX_WORKLOAD_PRIVATE_KEY` are used. The key is also used for the startup
+validation and for approval polling.
+
+## OpenRouter routing provenance
+
+When the model is served through OpenRouter (for example
+`ChatOpenAI(base_url="https://openrouter.ai/api/v1", ...)`), each model call
+also reports which upstream provider served it, at what cost, and whether the
+requested model and routing were honoured. These feed the agent's Provenance tab
+in OpenBox. No configuration is needed; see the base SDK's README for details
+and `OPENBOX_OPENROUTER_PROVENANCE=false` to turn it off.
+
 ## Supported Agent Types
 
 - `create_agent(model, tools, middleware=[...])` — recommended
@@ -105,14 +133,16 @@ be omitted. Otherwise, provide both values together.
 5-tier verdict system:
 - **ALLOW** — Request permitted
 - **CONSTRAIN** — Request constrained (e.g., rate limit)
-- **REQUIRE_APPROVAL** — Human approval required (HITL polling)
+- **REQUIRE_APPROVAL** — Human approval required. The async entry points
+  (`agent.ainvoke` / `astream`) wait for the decision; the sync ones fail safe
+  and do not run the operation.
 - **BLOCK** — Request blocked with error
 - **HALT** — Entire workflow halted (unrecoverable error)
 
 ## Requirements
 
 - Python 3.11+
-- openbox-sdk-python >= 1.0.0
+- openbox-sdk-python[http] >= 1.5.0
 - langchain-core >= 1.3.3
 - LangChain >= 1.0.0 (required only for `[agent]` extra, which enables `create_agent` middleware)
 
