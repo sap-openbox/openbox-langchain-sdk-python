@@ -69,6 +69,7 @@ class OpenBoxLangChainMiddlewareOptions:
     agent_name: str | None = None
     agent_did: str | None = None
     agent_private_key: str | None = None
+    workload_private_key: str | None = field(default=None, repr=False)
     session_id: str | None = None
     task_queue: str = "langchain"
     on_api_error: str = "fail_open"

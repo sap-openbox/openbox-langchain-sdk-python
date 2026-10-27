@@ -39,6 +39,7 @@ def create_openbox_langchain_middleware(
     agent_name: str | None = None,
     agent_did: str | None = None,
     agent_private_key: str | None = None,
+    workload_private_key: str | None = None,
     governance_timeout: float = 30.0,
     validate: bool = True,
     **kwargs: Any,
@@ -56,6 +57,10 @@ def create_openbox_langchain_middleware(
         agent_did: Optional OpenBox agent DID. Falls back to ``OPENBOX_AGENT_DID``.
         agent_private_key: Optional raw Ed25519 private key seed. Falls back to
             ``OPENBOX_AGENT_PRIVATE_KEY``.
+        workload_private_key: Optional PKCS8 PEM RSA key for an IAM v3 Keycloak
+            workload agent (the PEM contents, not a path). Falls back to
+            ``OPENBOX_LANGCHAIN_WORKLOAD_PRIVATE_KEY``, then
+            ``OPENBOX_WORKLOAD_PRIVATE_KEY``.
         governance_timeout: HTTP timeout in seconds (default 30.0).
         validate: If True, validates the API key against the server on startup.
         **kwargs: Additional kwargs forwarded to OpenBoxLangChainMiddlewareOptions
@@ -73,6 +78,7 @@ def create_openbox_langchain_middleware(
         agent_name=agent_name,
         agent_did=agent_did,
         agent_private_key=agent_private_key,
+        workload_private_key=workload_private_key,
         sdk_version=SDK_PACKAGE_VERSION,
         sdk_engine=SDK_ENGINE,
         sdk_language=SDK_LANGUAGE,
@@ -85,6 +91,7 @@ def create_openbox_langchain_middleware(
             timeout_seconds=config.timeout_seconds,
             on_api_error=config.on_api_error,
             identity=config.load_identity(),
+            workload_private_key=config.keycloak_workload_private_key(),
             sdk_version=config.sdk_version,
             sdk_engine=config.sdk_engine,
             sdk_language=config.sdk_language,
@@ -101,6 +108,7 @@ def create_openbox_langchain_middleware(
         agent_name=config.agent_name,
         agent_did=config.agent_did,
         agent_private_key=config.agent_private_key,
+        workload_private_key=config.workload_private_key,
         governance_timeout=config.timeout_seconds,
         **{k: v for k, v in kwargs.items() if k in valid_fields},
     )
