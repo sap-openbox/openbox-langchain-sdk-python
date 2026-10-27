@@ -161,16 +161,18 @@ async def enforce_start_verdict_async(
             await handle_approval(result)
 
 
-def enforce_start_verdict_sync(mw: OpenBoxLangChainMiddleware, result: EvaluationResult) -> None:
+def enforce_start_verdict_sync(
+    mw: OpenBoxLangChainMiddleware,
+    result: EvaluationResult,
+    context: ActivityContext | None = None,
+) -> None:
     """Enforce a start-stage verdict on the SYNC path.
 
-    BLOCK/HALT raise the same way as the async path. REQUIRE_APPROVAL is
-    FAIL-SHUT (M15, documented — not a real wait): the base ``CoreAdapter``
-    has no working ``handle_approval_sync`` (only a ``getattr`` probe exists
-    for adapters that choose to implement one), and the sync gate path never
-    drives the poller. A sync agent (``agent.invoke``) with a REQUIRE_APPROVAL
-    verdict therefore always rejects — the operation never runs. Use the async
-    entrypoints (``agent.ainvoke``) for a real HITL wait.
+    BLOCK/HALT raise the same way as the async path. REQUIRE_APPROVAL blocks
+    until the approval is decided (``LangChainCoreAdapter``), so a decision on
+    the dashboard takes effect for ``agent.invoke`` too. It fails safe — the
+    operation does not run — without an approval poller, without ``context``
+    (the ids the approval is polled by), or on a running event loop.
     """
     if result.verdict.should_stop():
         mw._runtime.adapter.raise_lifecycle_blocked(result)
@@ -179,6 +181,10 @@ def enforce_start_verdict_sync(mw: OpenBoxLangChainMiddleware, result: Evaluatio
         handle_approval_sync = getattr(mw._runtime.adapter, "handle_approval_sync", None)
         if callable(handle_approval_sync):
             handle_approval_sync(result)
+            return
+        wait_for_approval_sync = getattr(mw._runtime.adapter, "wait_for_approval_sync", None)
+        if callable(wait_for_approval_sync):
+            wait_for_approval_sync(result, context)
             return
         raise ApprovalRejectedError(
             "REQUIRE_APPROVAL verdict on the sync middleware path but the adapter "

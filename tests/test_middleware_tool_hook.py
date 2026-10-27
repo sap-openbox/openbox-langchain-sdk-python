@@ -301,6 +301,36 @@ def test_handle_wrap_tool_call_sync_allow_runs_tool_and_completes():
     assert "ActivityCompleted" in event_types
 
 
+def test_handle_wrap_tool_call_sync_waits_for_approval_with_tool_ids():
+    """agent.invoke waits for the decision instead of refusing, so the
+    dashboard request is not left dangling."""
+
+    class WaitingAdapter(FakeAdapter):
+        handle_approval_sync = None  # the LangChainCoreAdapter shape
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.waited = []
+
+        def wait_for_approval_sync(self, result, context):
+            self.waited.append(context)
+
+    gate = approval_first_gate()
+    adapter = WaitingAdapter()
+    mw = make_mw(gate=gate, adapter=adapter)
+    turn = make_turn(sync_mode=True)
+    handler = MagicMock(return_value="ok")
+
+    assert handle_wrap_tool_call_sync(mw, turn, make_request("refund_order"), handler) == "ok"
+
+    (ctx,) = adapter.waited
+    started = next(e for e in gate.sent if e.payload.get("event_type") == "ActivityStarted")
+    assert (ctx.run_id, ctx.activity_id, ctx.activity_type) == (
+        turn.run_id, started.activity_id, "refund_order"
+    )
+    handler.assert_called_once()
+
+
 def test_handle_wrap_tool_call_sync_require_approval_fails_shut():
     """M15: sync REQUIRE_APPROVAL with no handle_approval_sync fails safe."""
     from openbox_core.errors import ApprovalRejectedError

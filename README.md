@@ -133,9 +133,11 @@ and `OPENBOX_OPENROUTER_PROVENANCE=false` to turn it off.
 5-tier verdict system:
 - **ALLOW** — Request permitted
 - **CONSTRAIN** — Request constrained (e.g., rate limit)
-- **REQUIRE_APPROVAL** — Human approval required. The async entry points
-  (`agent.ainvoke` / `astream`) wait for the decision; the sync ones fail safe
-  and do not run the operation.
+- **REQUIRE_APPROVAL** — Human approval required. Both `agent.invoke` and
+  `agent.ainvoke` / `astream` wait for the decision made on the dashboard and
+  continue when it is approved. A sync call made from inside a running event
+  loop cannot block, so it fails safe and the operation does not run — use the
+  async entry points there.
 - **BLOCK** — Request blocked with error
 - **HALT** — Entire workflow halted (unrecoverable error)
 

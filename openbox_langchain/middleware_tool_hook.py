@@ -122,7 +122,7 @@ def handle_wrap_tool_call_sync(
             mw, _build_tool_started(mw, turn, activity_id, tool_name, tool_args)
         )
         try:
-            enforce_start_verdict_sync(mw, response)
+            enforce_start_verdict_sync(mw, response, ctx)
         except Exception as exc:
             _close_orphan_start_sync(mw, turn, activity_id, tool_name, str(exc))
             raise

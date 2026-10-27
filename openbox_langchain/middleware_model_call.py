@@ -86,7 +86,7 @@ def handle_wrap_model_call_sync(
         mw, turn, prompt_text, request.messages
     )
     if response is not None:
-        enforce_start_verdict_sync(mw, response)
+        enforce_start_verdict_sync(mw, response, llm_activity_context(mw, turn, activity_id))
         if response.guardrails and response.guardrails.redacted_input:
             apply_redaction_to_messages(request.messages, response.guardrails.redacted_input)
 
