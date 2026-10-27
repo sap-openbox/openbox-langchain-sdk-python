@@ -22,6 +22,7 @@ from openbox_langchain.middleware_hooks import (
     enforce_start_verdict_sync,
     evaluate_lifecycle_async,
     evaluate_lifecycle_sync,
+    note_completion_verdict,
 )
 
 if TYPE_CHECKING:
@@ -98,9 +99,10 @@ async def handle_wrap_tool_call(
         raise
 
     if mw._options.send_tool_end_event:
-        await evaluate_lifecycle_async(
+        completed = await evaluate_lifecycle_async(
             mw, _build_tool_completed(mw, turn, activity_id, tool_name, result=tool_result)
         )
+        note_completion_verdict(completed, tool_name)
     return tool_result
 
 
@@ -135,9 +137,10 @@ def handle_wrap_tool_call_sync(
         raise
 
     if mw._options.send_tool_end_event:
-        evaluate_lifecycle_sync(
+        completed = evaluate_lifecycle_sync(
             mw, _build_tool_completed(mw, turn, activity_id, tool_name, result=tool_result)
         )
+        note_completion_verdict(completed, tool_name)
     return tool_result
 
 

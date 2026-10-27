@@ -22,6 +22,7 @@ from openbox_langchain.middleware_hooks import (
     evaluate_lifecycle_async,
     evaluate_lifecycle_sync,
     extract_response_metadata,
+    note_completion_verdict,
 )
 from openbox_langchain.middleware_llm_logic import (
     build_llm_completed_envelope,
@@ -70,7 +71,7 @@ async def handle_wrap_model_call(
     if mw._options.send_llm_end_event:
         meta = extract_response_metadata(model_response)
         envelope = build_llm_completed_envelope(mw, turn, activity_id, meta)
-        await evaluate_lifecycle_async(mw, envelope)
+        note_completion_verdict(await evaluate_lifecycle_async(mw, envelope), "llm_call")
     return model_response
 
 
@@ -101,5 +102,8 @@ def handle_wrap_model_call_sync(
 
     if mw._options.send_llm_end_event:
         meta = extract_response_metadata(model_response)
-        evaluate_lifecycle_sync(mw, build_llm_completed_envelope(mw, turn, activity_id, meta))
+        completed = evaluate_lifecycle_sync(
+            mw, build_llm_completed_envelope(mw, turn, activity_id, meta)
+        )
+        note_completion_verdict(completed, "llm_call")
     return model_response

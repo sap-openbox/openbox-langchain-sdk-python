@@ -194,6 +194,29 @@ async def test_handle_wrap_tool_call_approval_gets_the_tool_activity_ids():
     assert ctx.activity_type == "refund_order"
 
 
+async def test_completion_stage_require_approval_continues_and_is_logged(caplog):
+    """The tool already ran when ActivityCompleted is evaluated: no approval
+    wait, the result is returned, and the request is logged."""
+
+    class ApprovalOnCompletionGate(FakeGate):
+        async def aevaluate(self, event):  # type: ignore[override]
+            if event.event_type.value == "ActivityCompleted":
+                self.verdicts[event.activity_id] = require_approval_result()
+            return await super().aevaluate(event)
+
+    adapter = FakeAdapter()
+    mw = make_mw(gate=ApprovalOnCompletionGate(), adapter=adapter)
+
+    with caplog.at_level("WARNING", logger="openbox_langchain.middleware_hooks"):
+        result = await handle_wrap_tool_call(
+            mw, make_turn(), make_request("refund_order"), AsyncMock(return_value="refunded")
+        )
+
+    assert result == "refunded"
+    assert adapter.approval_calls == []
+    assert "after refund_order completed" in caplog.text
+
+
 async def test_handle_wrap_tool_call_require_approval_rejected_never_runs_body():
     gate = approval_first_gate()
     mw = make_mw(gate=gate)  # default adapter rejects (no auto_approve)

@@ -13,6 +13,7 @@ re-exported here for a single hook-helpers import surface).
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 from openbox_core.adapters.base import adapter_accepts_context
@@ -37,6 +38,8 @@ if TYPE_CHECKING:
     from openbox_langchain.middleware import OpenBoxLangChainMiddleware
     from openbox_langchain.middleware_turn_state import MiddlewareTurnState
 
+_logger = logging.getLogger(__name__)
+
 __all__ = [
     "build_signal_received_envelope",
     "build_workflow_completed_envelope",
@@ -47,6 +50,7 @@ __all__ = [
     "evaluate_lifecycle_sync",
     "extract_last_user_message",
     "extract_response_metadata",
+    "note_completion_verdict",
 ]
 
 
@@ -125,6 +129,21 @@ async def evaluate_lifecycle_async(
     enforcement here; callers that must enforce use
     :func:`enforce_start_verdict_async`)."""
     return await mw._runtime.gate.aevaluate(event)
+
+
+def note_completion_verdict(result: EvaluationResult, activity_type: str) -> None:
+    """Log a REQUIRE_APPROVAL that arrives on ActivityCompleted.
+
+    The tool/LLM call already ran, so there is nothing left to gate: the run
+    continues without waiting, as in the LangGraph and Temporal SDKs.
+    """
+    if result.verdict.requires_approval():
+        _logger.warning(
+            "REQUIRE_APPROVAL returned after %s completed; continuing without "
+            "waiting. Match the rule on ActivityStarted to gate the operation.%s",
+            activity_type,
+            f" Reason: {result.reason}" if result.reason else "",
+        )
 
 
 def evaluate_lifecycle_sync(
