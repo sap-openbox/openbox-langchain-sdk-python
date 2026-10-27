@@ -64,6 +64,43 @@ def block_first_gate() -> FakeGate:
     return BlockFirstGate()
 
 
+
+async def test_handle_wrap_model_call_binds_llm_activity_during_model_call():
+    """The model's HTTP calls must resolve the llm_call activity even with no
+    active OTel span — trace registration alone is a no-op then."""
+    gate = FakeGate()
+    mw = make_mw(gate=gate)
+    seen = []
+
+    async def handler(_request):
+        seen.append(mw._runtime.context_store.current_activity_context())
+        return MagicMock(content="Response")
+
+    await handle_wrap_model_call(mw, make_turn(), make_request(), handler)
+
+    (ctx,) = seen
+    started = next(e for e in gate.sent if e.payload.get("event_type") == "ActivityStarted")
+    assert ctx is not None
+    assert ctx.activity_type == "llm_call"
+    assert ctx.activity_id == started.activity_id
+    assert mw._runtime.context_store.current_activity_context() is None
+
+
+def test_handle_wrap_model_call_sync_binds_llm_activity_during_model_call():
+    mw = make_mw()
+    seen = []
+
+    def handler(_request):
+        seen.append(mw._runtime.context_store.current_activity_context())
+        return MagicMock(content="Response")
+
+    handle_wrap_model_call_sync(mw, make_turn(sync_mode=True), make_request(), handler)
+
+    (ctx,) = seen
+    assert ctx is not None and ctx.activity_type == "llm_call"
+    assert mw._runtime.context_store.current_activity_context() is None
+
+
 # ─── handle_wrap_model_call (async) ────────────────────────────────────
 
 

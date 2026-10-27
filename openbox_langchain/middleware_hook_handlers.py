@@ -7,6 +7,7 @@ lines per file).
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 from openbox_langchain.lifecycle_events import build_activity_started
@@ -20,10 +21,13 @@ from openbox_langchain.middleware_hooks import (
     evaluate_lifecycle_sync,
     extract_last_user_message,
 )
+from openbox_langchain.middleware_llm_logic import llm_activity_context
 
 if TYPE_CHECKING:
     from openbox_langchain.middleware import OpenBoxLangChainMiddleware
     from openbox_langchain.middleware_turn_state import MiddlewareTurnState
+
+_logger = logging.getLogger(__name__)
 
 __all__ = [
     "handle_after_agent",
@@ -84,11 +88,18 @@ async def handle_before_agent(
         pre_screen = _build_pre_screen_envelope(mw, turn, user_prompt)
         response = await evaluate_lifecycle_async(mw, pre_screen)
         try:
-            await enforce_start_verdict_async(mw, response)
+            await enforce_start_verdict_async(
+                mw, response, llm_activity_context(mw, turn, pre_screen.activity_id)
+            )
         except Exception as enforcement_error:
             if mw._options.send_chain_end_event:
                 failed = build_workflow_completed_envelope(mw, turn, error=str(enforcement_error))
-                await evaluate_lifecycle_async(mw, failed)
+                # Best effort: a HALT has already closed the session on Core,
+                # which rejects this event — that must not replace the verdict.
+                try:
+                    await evaluate_lifecycle_async(mw, failed)
+                except Exception:
+                    _logger.debug("closing event after pre-screen stop failed", exc_info=True)
             raise
         turn = turn.with_pre_screen(response)
     return turn
@@ -117,7 +128,12 @@ def handle_before_agent_sync(
         except Exception as enforcement_error:
             if mw._options.send_chain_end_event:
                 failed = build_workflow_completed_envelope(mw, turn, error=str(enforcement_error))
-                evaluate_lifecycle_sync(mw, failed)
+                # Best effort: a HALT has already closed the session on Core,
+                # which rejects this event — that must not replace the verdict.
+                try:
+                    evaluate_lifecycle_sync(mw, failed)
+                except Exception:
+                    _logger.debug("closing event after pre-screen stop failed", exc_info=True)
             raise
         turn = turn.with_pre_screen(response)
     return turn

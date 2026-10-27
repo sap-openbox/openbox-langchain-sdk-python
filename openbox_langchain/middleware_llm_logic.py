@@ -36,6 +36,7 @@ if TYPE_CHECKING:
 __all__ = [
     "build_llm_completed_envelope",
     "is_first_llm_call",
+    "llm_activity_context",
     "register_llm_trace",
     "resolve_llm_started_verdict_async",
     "resolve_llm_started_verdict_sync",
@@ -127,6 +128,17 @@ def build_llm_completed_envelope(
     )
 
 
+def llm_activity_context(
+    mw: OpenBoxLangChainMiddleware, turn: MiddlewareTurnState, activity_id: str
+) -> ActivityContext:
+    """The ``llm_call`` ActivityContext the model call runs under."""
+    return ActivityContext(
+        workflow_id=turn.workflow_id, run_id=turn.run_id, workflow_type=mw._workflow_type,
+        task_queue=mw._options.task_queue, activity_id=activity_id, activity_type="llm_call",
+        agent_name=mw._options.agent_name, session_id=mw._options.session_id,
+    )
+
+
 def register_llm_trace(
     mw: OpenBoxLangChainMiddleware, turn: MiddlewareTurnState, activity_id: str
 ) -> None:
@@ -135,12 +147,9 @@ def register_llm_trace(
     trace_id = raw_trace_id(otel_trace.get_current_span())
     if not trace_id:
         return
-    ctx = ActivityContext(
-        workflow_id=turn.workflow_id, run_id=turn.run_id, workflow_type=mw._workflow_type,
-        task_queue=mw._options.task_queue, activity_id=activity_id, activity_type="llm_call",
-        agent_name=mw._options.agent_name, session_id=mw._options.session_id,
+    mw._runtime.context_store.register_trace(
+        trace_id, llm_activity_context(mw, turn, activity_id)
     )
-    mw._runtime.context_store.register_trace(trace_id, ctx)
 
 
 def unregister_llm_trace(mw: OpenBoxLangChainMiddleware) -> None:

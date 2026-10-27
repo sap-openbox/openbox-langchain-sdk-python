@@ -166,6 +166,34 @@ async def test_handle_wrap_tool_call_require_approval_awaits_adapter():
     handler.assert_awaited_once()
 
 
+async def test_handle_wrap_tool_call_approval_gets_the_tool_activity_ids():
+    """Core's verdict does not echo the ids the approval is polled by, so the
+    adapter must be handed the tool's own activity context."""
+
+    class ContextAdapter(FakeAdapter):
+        def __init__(self) -> None:
+            super().__init__()
+            self.contexts = []
+
+        async def handle_approval(self, result, context=None):  # type: ignore[override]
+            self.contexts.append(context)
+
+    gate = approval_first_gate()
+    adapter = ContextAdapter()
+    mw = make_mw(gate=gate, adapter=adapter)
+    turn = make_turn()
+
+    handler = AsyncMock(return_value="ok")
+    await handle_wrap_tool_call(mw, turn, make_request("refund_order"), handler)
+
+    (ctx,) = adapter.contexts
+    started = next(e for e in gate.sent if e.payload.get("event_type") == "ActivityStarted")
+    assert (ctx.workflow_id, ctx.run_id, ctx.activity_id) == (
+        turn.workflow_id, turn.run_id, started.activity_id
+    )
+    assert ctx.activity_type == "refund_order"
+
+
 async def test_handle_wrap_tool_call_require_approval_rejected_never_runs_body():
     gate = approval_first_gate()
     mw = make_mw(gate=gate)  # default adapter rejects (no auto_approve)
@@ -203,7 +231,7 @@ async def test_handle_wrap_tool_call_tool_body_error_sends_failed_completion():
 
     completed = [e for e in gate.sent if e.payload.get("event_type") == "ActivityCompleted"]
     assert len(completed) == 1
-    assert "tool crashed" in completed[0].payload.get("error", "")
+    assert completed[0].payload["error"]["message"] == "tool crashed"
 
 
 async def test_handle_wrap_tool_call_skips_tool_start_when_flag_false():
@@ -298,7 +326,7 @@ def test_handle_wrap_tool_call_sync_tool_body_error_sends_failed_completion():
 
     completed = [e for e in gate.sent if e.payload.get("event_type") == "ActivityCompleted"]
     assert len(completed) == 1
-    assert "boom" in completed[0].payload.get("error", "")
+    assert completed[0].payload["error"]["message"] == "boom"
 
 
 def test_handle_wrap_tool_call_sync_skips_governance_for_excluded_tools():

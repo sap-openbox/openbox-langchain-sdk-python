@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from openbox_core.adapters.base import adapter_accepts_context
 from openbox_core.contracts.events import (
     EventEnvelope,
     signal_received,
@@ -30,6 +31,7 @@ from openbox_langchain.middleware_message_extraction import (
 )
 
 if TYPE_CHECKING:
+    from openbox_core.contracts.context import ActivityContext
     from openbox_core.contracts.results import EvaluationResult
 
     from openbox_langchain.middleware import OpenBoxLangChainMiddleware
@@ -136,19 +138,27 @@ def evaluate_lifecycle_sync(
 
 
 async def enforce_start_verdict_async(
-    mw: OpenBoxLangChainMiddleware, result: EvaluationResult
+    mw: OpenBoxLangChainMiddleware,
+    result: EvaluationResult,
+    context: ActivityContext | None = None,
 ) -> None:
     """Enforce a start-stage verdict on the ASYNC path.
 
     BLOCK/HALT raise via ``adapter.raise_lifecycle_blocked`` (native core
     error types). REQUIRE_APPROVAL drives ``adapter.handle_approval`` — a real
     wait when an ``ApprovalPoller`` is configured, else fail-safe rejection.
+    ``context`` is the activity awaiting approval: Core's verdict does not echo
+    the workflow/run/activity ids the approval is polled by.
     """
     if result.verdict.should_stop():
         mw._runtime.adapter.raise_lifecycle_blocked(result)
         return
     if result.verdict.requires_approval():
-        await mw._runtime.adapter.handle_approval(result)
+        handle_approval = mw._runtime.adapter.handle_approval
+        if context is not None and adapter_accepts_context(handle_approval):
+            await handle_approval(result, context=context)
+        else:
+            await handle_approval(result)
 
 
 def enforce_start_verdict_sync(mw: OpenBoxLangChainMiddleware, result: EvaluationResult) -> None:

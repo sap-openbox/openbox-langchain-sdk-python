@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
-from openbox_core.errors import GovernanceBlockedError
+from openbox_core.errors import GovernanceAPIError, GovernanceBlockedError
 
 from openbox_langchain.middleware_hook_handlers import (
     handle_after_agent,
@@ -140,6 +140,39 @@ async def test_handle_before_agent_block_raises_and_sends_workflow_completed_fai
     completed = [e for e in gate.sent if e.payload.get("event_type") == "WorkflowCompleted"]
     assert len(completed) == 1
     assert completed[0].payload.get("status") == "failed"
+
+
+class _BlockThenRejectCloseGate(FakeGate):
+    """Blocks the pre-screen, then fails the closing event the way Core does
+    once a stop has already closed the session (HTTP 400, fail-closed)."""
+
+    def _stop_or_reject(self, event):
+        if event.event_type.value == "ActivityStarted":
+            self.verdicts[event.activity_id] = block_result("banned words")
+        if event.event_type.value == "WorkflowCompleted":
+            raise GovernanceAPIError("Governance API error: HTTP 400")
+
+    async def aevaluate(self, event):  # type: ignore[override]
+        self._stop_or_reject(event)
+        return await super().aevaluate(event)
+
+    def evaluate(self, event):  # type: ignore[override]
+        self._stop_or_reject(event)
+        return super().evaluate(event)
+
+
+async def test_handle_before_agent_stop_survives_rejected_closing_event():
+    mw = make_mw(gate=_BlockThenRejectCloseGate())
+
+    with pytest.raises(GovernanceBlockedError):
+        await handle_before_agent(mw, make_turn(), STATE_WITH_MESSAGES, MagicMock())
+
+
+def test_handle_before_agent_sync_stop_survives_rejected_closing_event():
+    mw = make_mw(gate=_BlockThenRejectCloseGate())
+
+    with pytest.raises(GovernanceBlockedError):
+        handle_before_agent_sync(mw, make_turn(sync_mode=True), STATE_WITH_MESSAGES, MagicMock())
 
 
 async def test_handle_before_agent_require_approval_awaits_adapter():

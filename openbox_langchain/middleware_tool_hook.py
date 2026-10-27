@@ -85,7 +85,7 @@ async def handle_wrap_tool_call(
             mw, _build_tool_started(mw, turn, activity_id, tool_name, tool_args)
         )
         try:
-            await enforce_start_verdict_async(mw, response)
+            await enforce_start_verdict_async(mw, response, ctx)
         except Exception as exc:
             await _close_orphan_start_async(mw, turn, activity_id, tool_name, str(exc))
             raise

@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from openbox_core.context import activity_scope
+
 from openbox_langchain.lifecycle_events import (
     apply_redaction_to_messages,
     extract_human_turn_prompt,
@@ -23,6 +25,7 @@ from openbox_langchain.middleware_hooks import (
 )
 from openbox_langchain.middleware_llm_logic import (
     build_llm_completed_envelope,
+    llm_activity_context,
     register_llm_trace,
     resolve_llm_started_verdict_async,
     resolve_llm_started_verdict_sync,
@@ -48,13 +51,19 @@ async def handle_wrap_model_call(
         mw, turn, prompt_text, request.messages
     )
     if response is not None:
-        await enforce_start_verdict_async(mw, response)
+        await enforce_start_verdict_async(mw, response, llm_activity_context(mw, turn, activity_id))
         if response.guardrails and response.guardrails.redacted_input:
             apply_redaction_to_messages(request.messages, response.guardrails.redacted_input)
 
+    # Bound like a tool body, so Layer-2 HTTP hooks resolve the llm_call
+    # activity even when no OTel span is active (trace registration alone is a
+    # no-op then, and the model's HTTP calls went unattributed).
     register_llm_trace(mw, turn, activity_id)
     try:
-        model_response = await handler(request)
+        with activity_scope(
+            llm_activity_context(mw, turn, activity_id), store=mw._runtime.context_store
+        ):
+            model_response = await handler(request)
     finally:
         unregister_llm_trace(mw)
 
@@ -83,7 +92,10 @@ def handle_wrap_model_call_sync(
 
     register_llm_trace(mw, turn, activity_id)
     try:
-        model_response = handler(request)
+        with activity_scope(
+            llm_activity_context(mw, turn, activity_id), store=mw._runtime.context_store
+        ):
+            model_response = handler(request)
     finally:
         unregister_llm_trace(mw)
 
