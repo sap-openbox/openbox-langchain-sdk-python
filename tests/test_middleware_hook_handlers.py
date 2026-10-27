@@ -123,6 +123,26 @@ async def test_handle_before_agent_skips_events_when_flags_false():
     assert "ActivityStarted" not in event_types
 
 
+async def test_handle_before_agent_sends_workflow_started_before_signal():
+    """Core holds every other event for a run until WorkflowStarted has
+    created its session (SessionNotReady), so it must go out first."""
+    gate = FakeGate()
+    await handle_before_agent(make_mw(gate=gate), make_turn(), STATE_WITH_MESSAGES, MagicMock())
+
+    event_types = [e.payload.get("event_type") for e in gate.sent]
+    assert event_types[:2] == ["WorkflowStarted", "SignalReceived"]
+
+
+def test_handle_before_agent_sync_sends_workflow_started_before_signal():
+    gate = FakeGate()
+    handle_before_agent_sync(
+        make_mw(gate=gate), make_turn(sync_mode=True), STATE_WITH_MESSAGES, MagicMock()
+    )
+
+    event_types = [e.payload.get("event_type") for e in gate.sent]
+    assert event_types[:2] == ["WorkflowStarted", "SignalReceived"]
+
+
 async def test_handle_before_agent_block_raises_and_sends_workflow_completed_failed():
     class BlockFirstGate(FakeGate):
         async def aevaluate(self, event):  # type: ignore[override]

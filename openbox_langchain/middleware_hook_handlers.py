@@ -71,7 +71,7 @@ def _build_pre_screen_envelope(
 async def handle_before_agent(
     mw: OpenBoxLangChainMiddleware, turn: MiddlewareTurnState, state: Any, runtime: Any,
 ) -> MiddlewareTurnState:
-    """Async before_agent: SignalReceived + WorkflowStarted + pre-screen guardrails.
+    """Async before_agent: WorkflowStarted + SignalReceived + pre-screen guardrails.
 
     Returns the (possibly pre-screen-carrying) ``turn`` — ``MiddlewareTurnState``
     is frozen, so the caller (``middleware.py``) returns THIS value as the
@@ -79,10 +79,12 @@ async def handle_before_agent(
     """
     user_prompt = extract_last_user_message(_state_messages(state))
 
-    if user_prompt:
-        await evaluate_lifecycle_async(mw, build_signal_received_envelope(mw, turn, user_prompt))
+    # WorkflowStarted first: Core creates the session from it and holds any
+    # other event for the run (SessionNotReady) until that session exists.
     if mw._options.send_chain_start_event:
         await evaluate_lifecycle_async(mw, build_workflow_started_envelope(mw, turn, state))
+    if user_prompt:
+        await evaluate_lifecycle_async(mw, build_signal_received_envelope(mw, turn, user_prompt))
 
     if mw._options.send_llm_start_event and user_prompt and user_prompt.strip():
         pre_screen = _build_pre_screen_envelope(mw, turn, user_prompt)
@@ -115,16 +117,20 @@ def handle_before_agent_sync(
     """
     user_prompt = extract_last_user_message(_state_messages(state))
 
-    if user_prompt:
-        evaluate_lifecycle_sync(mw, build_signal_received_envelope(mw, turn, user_prompt))
+    # WorkflowStarted first: Core creates the session from it and holds any
+    # other event for the run (SessionNotReady) until that session exists.
     if mw._options.send_chain_start_event:
         evaluate_lifecycle_sync(mw, build_workflow_started_envelope(mw, turn, state))
+    if user_prompt:
+        evaluate_lifecycle_sync(mw, build_signal_received_envelope(mw, turn, user_prompt))
 
     if mw._options.send_llm_start_event and user_prompt and user_prompt.strip():
         pre_screen = _build_pre_screen_envelope(mw, turn, user_prompt)
         response = evaluate_lifecycle_sync(mw, pre_screen)
         try:
-            enforce_start_verdict_sync(mw, response)
+            enforce_start_verdict_sync(
+                mw, response, llm_activity_context(mw, turn, pre_screen.activity_id)
+            )
         except Exception as enforcement_error:
             if mw._options.send_chain_end_event:
                 failed = build_workflow_completed_envelope(mw, turn, error=str(enforcement_error))
